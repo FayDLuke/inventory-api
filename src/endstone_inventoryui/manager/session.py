@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 
 from bedrock_protocol.packets.types import BlockPos
 from endstone import Player
+from endstone.scheduler import Task
 
 from endstone_inventoryui.manager.container.container_manager import ContainerManager
 from endstone_inventoryui.menu.graphic.block_graphic import BlockGraphic
@@ -19,9 +20,9 @@ from endstone_inventoryui.util.utils import send_ack_packet, get_block_behind
 
 
 class Session:
-    CONTAINER_ID: int = 2
 
-    MAX_OPEN_ATTEMPTS: int = 10
+    CONTAINER_ID: int = 2
+    MAX_OPEN_ATTEMPTS: int = 12
 
     class State(Enum):
         NONE = 0
@@ -40,8 +41,9 @@ class Session:
         self.graphic: Graphic | None = None
         self.container_manager: ContainerManager | None = None
         self.block_pos: list[BlockPos] = []
-        self.open_attempts = 0
-        self.ack_timestamp = 0
+        self.open_task: Task | None = None
+        self.open_attempts: int = 0
+        self.ack_timestamp: int = 0
         self.pending: deque['Menu'] = deque()
 
     @property
@@ -115,6 +117,9 @@ class Session:
             case self.State.GRAPHIC_DATA_RECEIVED:
                 self.open()
             case self.State.OPEN:
+                if self.open_task is not None:
+                    self.open_task.cancel()
+                    self.open_task = None
                 self.send_contents()
 
     def __del__(self):

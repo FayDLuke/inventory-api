@@ -11,6 +11,7 @@ from bedrock_protocol.packets.types.item_stack_response import ItemStackResponse
 from endstone.event import event_handler, EventPriority, PlayerQuitEvent, PacketReceiveEvent, PacketSendEvent
 from endstone.inventory import ItemStack
 from endstone.plugin import Plugin
+from endstone import Player
 
 from .manager import Session
 from .manager.container.item_stack_response_builder import ItemStackResponseBuilder
@@ -175,10 +176,11 @@ class EventListener:
                 # up to MAX_OPEN_ATTEMPTS times until it's processed.
                 # This is required for low-latency connections.
                 if session.open_attempts >= Session.MAX_OPEN_ATTEMPTS:
+                    self._plugin.logger.debug(f"Max open attempts reached. Closing session for {player.name}")
                     session.close()
                     return
                 session.open_attempts += 1
-                session.open()
+                session.open_task = self._plugin.server.scheduler.run_task(self._plugin, lambda: session.open(), delay=1)
 
     def _handle_container_close(self, player, payload: bytes) -> None:
         session = find_session(player)
@@ -202,7 +204,7 @@ class EventListener:
             session.close(sync_inventory=True)
             close_session(player)
 
-    def _handle_packet_violation_warning(self, player) -> None:
+    def _handle_packet_violation_warning(self, player: Player) -> None:
         session = find_session(player)
         if session is None or session.state != Session.State.OPENING:
             return
@@ -210,6 +212,9 @@ class EventListener:
         session.update_state(Session.State.OPEN)
         if session.menu._open_listener is not None:
             session.menu._open_listener(player)
+
+        self._plugin.logger.debug(
+            f"{player.name} opened the container on attempt {session.open_attempts} of {Session.MAX_OPEN_ATTEMPTS}")
 
     def _handle_item_stack_request_packet(self, player, payload: bytes) -> bool:
         session = find_session(player)
